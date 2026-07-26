@@ -106,7 +106,24 @@ var app = builder.Build();
 // Apply pending EF migrations at startup (safe on Render's single free instance).
 using (var scope = app.Services.CreateScope())
 {
-    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+    var services = scope.ServiceProvider;
+    services.GetRequiredService<AppDbContext>().Database.Migrate();
+    var roles = services.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+    if (!await roles.RoleExistsAsync("Admin"))
+    {
+        await roles.CreateAsync(new IdentityRole<Guid>("Admin"));
+    }
+
+    var bootstrapEmails = builder.Configuration.GetSection("Admin:BootstrapEmails").Get<string[]>() ?? [];
+    var users = services.GetRequiredService<UserManager<AppUser>>();
+    foreach (var email in bootstrapEmails.Where(email => !string.IsNullOrWhiteSpace(email)))
+    {
+        var user = await users.FindByEmailAsync(email);
+        if (user is not null && !await users.IsInRoleAsync(user, "Admin"))
+        {
+            await users.AddToRoleAsync(user, "Admin");
+        }
+    }
 }
 
 app.UseForwardedHeaders();
@@ -130,6 +147,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" }))
 app.MapAuthEndpoints();
 app.MapExternalAuthEndpoints();
 app.MapReferralEndpoints();
+app.MapCommerceEndpoints();
 
 app.Run();
 

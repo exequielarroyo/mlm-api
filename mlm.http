@@ -18,12 +18,46 @@ POST {{mlm_HostAddress}}/login
 Content-Type: application/json
 
 {
-  "usernameOrEmail": "juandc",
-  "password": "secret123"
+  "usernameOrEmail": "juantamad",
+  "password": "awdawd"
 }
+
+###
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5MjY0ODEyYy1mM2ZkLTQ1YzctYmI2Yy0zYWQ3Mzc5MjZhZWIiLCJ1bmlxdWVfbmFtZSI6Imp1YW50YW1hZCIsImVtYWlsIjoianVhbnRhbWFkQHNhbXBsZS5jb20iLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsImV4cCI6MTc4NTA0MDI0MSwiaXNzIjoibWxtLWFwaSIsImF1ZCI6Im1sbS11aSJ9.R1wBCw4h_pcuBzxwjUdk99AP0CC1u-648zczExwOT-M
 
 ### Current user (requires bearer token from /login)
 GET {{mlm_HostAddress}}/me
-Authorization: Bearer PASTE_TOKEN_HERE
+Authorization: Bearer {{token}}
 
 ###
+POST {{mlm_HostAddress}}/admin/products
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Starter Product",
+  "imageUrl": "https://example.com/product.jpg",
+  "price": 500,
+  "discountPercent": 0
+}
+
+###
+GET {{mlm_HostAddress}}/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+###
+GET {{mlm_HostAddress}}/admin/orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+###
+@orderId = 7d44b69a-5af5-430c-9709-4e12934dcb9b
+
+###
+POST {{mlm_HostAddress}}/admin/orders/{{orderId}}/complete
+Authorization: Bearer {{token}}
+
+###
+POST {{mlm_HostAddress}}/admin/payouts
+Authorization: Bearer {{token}}
