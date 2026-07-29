@@ -4,13 +4,15 @@ using Microsoft.EntityFrameworkCore;
 using mlm.Models;
 using mlm.Security;
 
+using mlm.Services;
+
 namespace mlm.Endpoints;
 
 public static class AuthEndpoints
 {
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/register", async (RegisterRequest request, UserManager<AppUser> users) =>
+        app.MapPost("/register", async (RegisterRequest request, UserManager<AppUser> users, BinaryService binary) =>
         {
             if (string.IsNullOrWhiteSpace(request.FirstName) ||
                 string.IsNullOrWhiteSpace(request.LastName) ||
@@ -56,6 +58,12 @@ public static class AuthEndpoints
             if (!result.Succeeded)
             {
                 return Results.BadRequest(string.Join(" ", result.Errors.Select(e => e.Description)));
+            }
+
+            // Binary placement: if there's a sponsor, place in binary tree.
+            if (sponsorId.HasValue)
+            {
+                await binary.PlaceMemberAsync(sponsorId.Value, user.Id);
             }
 
             return Results.Ok(user.ToDto());

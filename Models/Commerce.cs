@@ -27,6 +27,7 @@ public class Order
     public DateTime? CompletedAt { get; set; }
     public DateTime? RefundedAt { get; set; }
     public List<OrderLine> Lines { get; set; } = [];
+    public string? PaymentReference { get; set; }
 }
 
 public class OrderLine
@@ -79,8 +80,9 @@ public class PayoutItem
 public record ProductRequest(string Name, string? ImageUrl, decimal Price, decimal? DiscountPercent);
 public record OrderLineRequest(Guid ProductId, int Quantity);
 public record CreateOrderRequest(IReadOnlyList<OrderLineRequest> Lines);
+public record PayOrderRequest(string Reference);
 public record OrderLineDto(Guid Id, Guid ProductId, string ProductName, decimal UnitPrice, int Quantity, decimal LineSubtotal);
-public record OrderDto(Guid Id, Guid BuyerId, OrderStatus Status, decimal ProductSubtotal, DateTime CreatedAt, DateTime? CompletedAt, DateTime? RefundedAt, IReadOnlyList<OrderLineDto> Lines);
+public record OrderDto(Guid Id, Guid BuyerId, string? BuyerName, OrderStatus Status, decimal ProductSubtotal, string? PaymentReference, DateTime CreatedAt, DateTime? CompletedAt, DateTime? RefundedAt, IReadOnlyList<OrderLineDto> Lines);
 public record CommissionSummaryDto(decimal Available, decimal Paid, decimal Reversed, decimal RecoveryRequired);
 public record CommissionDto(Guid Id, Guid OrderId, string BuyerName, int Level, decimal Rate, decimal CommissionableAmount, decimal Amount, CommissionStatus Status, DateTime CreatedAt, DateTime? PaidAt);
 public record PayoutDto(Guid Id, decimal Amount, PayoutStatus Status, DateTime CreatedAt, DateTime? PaidAt);
@@ -91,8 +93,10 @@ public static class CommerceMappingExtensions
     public static OrderDto ToDto(this Order order) => new(
         order.Id,
         order.BuyerId,
+        $"{order.Buyer?.FirstName} {order.Buyer?.LastName}".Trim(),
         order.Status,
         order.ProductSubtotal,
+        order.PaymentReference,
         order.CreatedAt,
         order.CompletedAt,
         order.RefundedAt,

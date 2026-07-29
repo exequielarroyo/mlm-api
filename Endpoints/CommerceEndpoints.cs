@@ -80,7 +80,7 @@ public static class CommerceEndpoints
         {
             var me = await users.GetUserAsync(principal);
             if (me is null) return Results.NotFound();
-            var orders = await db.Orders.Where(o => o.BuyerId == me.Id).Include(o => o.Lines).OrderByDescending(o => o.CreatedAt).ToListAsync();
+            var orders = await db.Orders.Where(o => o.BuyerId == me.Id).Include(o => o.Lines).Include(o => o.Buyer).OrderByDescending(o => o.CreatedAt).ToListAsync();
             return Results.Ok(orders.Select(o => o.ToDto()));
         }).RequireAuthorization().WithTags("Orders");
         app.MapGet("/orders/{id:guid}", async (Guid id, ClaimsPrincipal principal, UserManager<AppUser> users, AppDbContext db) =>
@@ -91,10 +91,24 @@ public static class CommerceEndpoints
             return order is null ? Results.NotFound() : Results.Ok(order.ToDto());
         }).RequireAuthorization().WithTags("Orders");
 
+        app.MapPost("/orders/{id:guid}/pay", async (Guid id, PayOrderRequest request, ClaimsPrincipal principal, UserManager<AppUser> users, AppDbContext db) =>
+        {
+            var me = await users.GetUserAsync(principal);
+            if (me is null) return Results.NotFound();
+            var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == id && o.BuyerId == me.Id);
+            if (order is null) return Results.NotFound();
+            if (order.Status != OrderStatus.PendingPayment) return Results.BadRequest("Only pending orders can be paid.");
+            if (string.IsNullOrWhiteSpace(request.Reference)) return Results.BadRequest("Payment reference is required.");
+
+            order.PaymentReference = request.Reference.Trim();
+            await db.SaveChangesAsync();
+            return Results.Ok(order.ToDto());
+        }).RequireAuthorization().WithTags("Orders");
+
         var adminOrders = app.MapGroup("/admin/orders").RequireAuthorization(AdminOnly).WithTags("Admin Orders");
         adminOrders.MapGet("/", async (AppDbContext db) =>
         {
-            var orders = await db.Orders.Include(o => o.Lines).OrderByDescending(o => o.CreatedAt).ToListAsync();
+            var orders = await db.Orders.Include(o => o.Lines).Include(o => o.Buyer).OrderByDescending(o => o.CreatedAt).ToListAsync();
             return orders.Select(o => o.ToDto());
         });
         adminOrders.MapPost("/{id:guid}/complete", async (Guid id, AppDbContext db) => await CompleteOrder(id, db));
@@ -170,16 +184,37 @@ public static class CommerceEndpoints
         if (order.Status == OrderStatus.Completed) return Results.Ok(order.ToDto());
         var buyer = await db.Users.FindAsync(order.BuyerId);
         if (buyer is null) return Results.BadRequest("Order buyer was not found.");
-        var sponsorId = buyer.SponsorId; var level = 0;
-        while (sponsorId is not null && level < CommissionRates.Length)
+
+        // Bulk fetch all ancestors
+        var ancestors = await db.Users.FromSqlRaw(@$"
+            WITH RECURSIVE AncestorTree AS (
+                SELECT * FROM ""AspNetUsers"" WHERE ""Id"" = {{0}}
+                UNION ALL
+                SELECT u.* FROM ""AspNetUsers"" u
+                INNER JOIN AncestorTree a ON u.""Id"" = a.""SponsorId""
+            )
+            SELECT * FROM AncestorTree
+        ", buyer.SponsorId).ToListAsync();
+
+        var level = 0;
+        foreach (var sponsor in ancestors)
         {
+            if (level >= CommissionRates.Length) break;
             level++;
-            var sponsor = await db.Users.FindAsync(sponsorId.Value);
-            if (sponsor is null) break;
-            db.Commissions.Add(new Commission { OrderId = order.Id, BuyerId = buyer.Id, RecipientId = sponsor.Id, Level = level, Rate = CommissionRates[level - 1], CommissionableAmount = order.ProductSubtotal, Amount = Math.Round(order.ProductSubtotal * CommissionRates[level - 1], 2) });
-            sponsorId = sponsor.SponsorId;
+            db.Commissions.Add(new Commission
+            {
+                OrderId = order.Id,
+                BuyerId = buyer.Id,
+                RecipientId = sponsor.Id,
+                Level = level,
+                Rate = CommissionRates[level - 1],
+                CommissionableAmount = order.ProductSubtotal,
+                Amount = Math.Round(order.ProductSubtotal * CommissionRates[level - 1], 2)
+            });
         }
-        order.Status = OrderStatus.Completed; order.CompletedAt = DateTime.UtcNow;
+
+        order.Status = OrderStatus.Completed;
+        order.CompletedAt = DateTime.UtcNow;
         try { await db.SaveChangesAsync(); await transaction.CommitAsync(); }
         catch (DbUpdateException) { await transaction.RollbackAsync(); return Results.Conflict("Commissions have already been created for this order."); }
         await db.Entry(order).Collection(o => o.Lines).LoadAsync();
@@ -192,7 +227,8 @@ public static class CommerceEndpoints
         if (order is null) return Results.NotFound();
         if (order.Status == OrderStatus.Refunded)
         {
-            await db.Entry(order).Collection(o => o.Lines).LoadAsync();
+        await db.Entry(order).Collection(o => o.Lines).LoadAsync();
+        await db.Entry(order).Reference(o => o.Buyer).LoadAsync();
             return Results.Ok(order.ToDto());
         }
         if (order.Status != OrderStatus.Completed) return Results.BadRequest("Only completed orders can be refunded.");

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -9,6 +10,7 @@ using mlm.Data;
 using mlm.Endpoints;
 using mlm.Models;
 using mlm.Security;
+using mlm.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +24,11 @@ if (!string.IsNullOrWhiteSpace(port))
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 // Prefer a DATABASE_URL (e.g. Render Postgres) and fall back to the configured connection string.
 var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
@@ -46,6 +53,7 @@ builder.Services
     .AddEntityFrameworkStores<AppDbContext>();
 
 builder.Services.AddScoped<JwtTokenService>();
+builder.Services.AddScoped<BinaryService>();
 
 var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services
@@ -148,6 +156,7 @@ app.MapAuthEndpoints();
 app.MapExternalAuthEndpoints();
 app.MapReferralEndpoints();
 app.MapCommerceEndpoints();
+app.MapBinaryEndpoints();
 
 app.Run();
 

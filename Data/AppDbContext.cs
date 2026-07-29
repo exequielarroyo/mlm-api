@@ -14,6 +14,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Commission> Commissions => Set<Commission>();
     public DbSet<PayoutBatch> PayoutBatches => Set<PayoutBatch>();
     public DbSet<PayoutItem> PayoutItems => Set<PayoutItem>();
+    public DbSet<BinaryPair> BinaryPairs => Set<BinaryPair>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -23,6 +24,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             user.Property(u => u.ReferralCode).HasMaxLength(16);
             user.HasIndex(u => u.ReferralCode).IsUnique();
+
+            // Binary tree relationships
+            user.HasOne(u => u.BinaryParent)
+                .WithMany()
+                .HasForeignKey(u => u.BinaryParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            user.HasOne(u => u.LeftLeg)
+                .WithMany()
+                .HasForeignKey(u => u.LeftLegId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            user.HasOne(u => u.RightLeg)
+                .WithMany()
+                .HasForeignKey(u => u.RightLegId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Product>(product =>
@@ -53,5 +70,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         });
         builder.Entity<PayoutBatch>(payout => payout.Property(p => p.Amount).HasPrecision(18, 2));
         builder.Entity<PayoutItem>(item => item.HasKey(i => new { i.PayoutBatchId, i.CommissionId }));
+
+        builder.Entity<BinaryPair>(pair =>
+        {
+            pair.Property(p => p.CommissionAmount).HasPrecision(18, 2);
+            pair.HasIndex(p => new { p.UserId, p.CreatedAt });
+        });
     }
 }

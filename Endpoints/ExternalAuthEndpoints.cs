@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using mlm.Models;
 using mlm.Security;
+using mlm.Services;
 
 namespace mlm.Endpoints;
 
@@ -17,7 +18,8 @@ public static class ExternalAuthEndpoints
             UserManager<AppUser> users,
             JwtTokenService tokens,
             IConfiguration configuration,
-            HttpResponse response) =>
+            HttpResponse response,
+            BinaryService binary) =>
         {
             if (string.IsNullOrWhiteSpace(request.IdToken))
             {
@@ -94,6 +96,12 @@ public static class ExternalAuthEndpoints
                 if (!linkResult.Succeeded)
                 {
                     return Results.BadRequest(string.Join(" ", linkResult.Errors.Select(e => e.Description)));
+                }
+
+                // Binary placement: if there's a sponsor, place in binary tree.
+                if (sponsorId.HasValue)
+                {
+                    await binary.PlaceMemberAsync(sponsorId.Value, user.Id);
                 }
             }
 
