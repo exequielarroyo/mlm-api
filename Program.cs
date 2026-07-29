@@ -157,6 +157,7 @@ app.MapExternalAuthEndpoints();
 app.MapReferralEndpoints();
 app.MapCommerceEndpoints();
 app.MapBinaryEndpoints();
+app.MapAdminEndpoints();
 
 app.Run();
 

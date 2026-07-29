@@ -69,7 +69,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             commission.HasIndex(c => new { c.RecipientId, c.Status });
         });
         builder.Entity<PayoutBatch>(payout => payout.Property(p => p.Amount).HasPrecision(18, 2));
-        builder.Entity<PayoutItem>(item => item.HasKey(i => new { i.PayoutBatchId, i.CommissionId }));
+        builder.Entity<PayoutItem>(item =>
+        {
+            item.HasKey(i => i.Id);
+            item.HasOne(i => i.Commission).WithMany().HasForeignKey(i => i.CommissionId).OnDelete(DeleteBehavior.Restrict);
+            item.HasOne(i => i.BinaryPair).WithMany().HasForeignKey(i => i.BinaryPairId).OnDelete(DeleteBehavior.Restrict);
+        });
 
         builder.Entity<BinaryPair>(pair =>
         {

@@ -71,10 +71,13 @@ public class PayoutBatch
 
 public class PayoutItem
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
     public Guid PayoutBatchId { get; set; }
     public PayoutBatch? PayoutBatch { get; set; }
-    public Guid CommissionId { get; set; }
+    public Guid? CommissionId { get; set; }
     public Commission? Commission { get; set; }
+    public Guid? BinaryPairId { get; set; }
+    public BinaryPair? BinaryPair { get; set; }
 }
 
 public record ProductRequest(string Name, string? ImageUrl, decimal Price, decimal? DiscountPercent);
@@ -87,6 +90,7 @@ public record CommissionSummaryDto(decimal Available, decimal Paid, decimal Reve
 public record CommissionDto(Guid Id, Guid OrderId, string BuyerName, int Level, decimal Rate, decimal CommissionableAmount, decimal Amount, CommissionStatus Status, DateTime CreatedAt, DateTime? PaidAt);
 public record PayoutDto(Guid Id, decimal Amount, PayoutStatus Status, DateTime CreatedAt, DateTime? PaidAt);
 public record CreatePayoutRequest(Guid RecipientId, IReadOnlyList<Guid>? CommissionIds);
+public record AvailableRecipientDto(Guid RecipientId, decimal Amount, string Source);
 
 public static class CommerceMappingExtensions
 {

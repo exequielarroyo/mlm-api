@@ -104,21 +104,25 @@ public class BinaryService
         return await _db.BinaryPairs
             .Where(p => p.UserId == userId)
             .OrderByDescending(p => p.CreatedAt)
-            .Select(p => new BinaryPairDto(p.Id, p.PairsMatched, p.CommissionAmount, p.CreatedAt))
+            .Select(p => new BinaryPairDto(p.Id, p.PairsMatched, p.CommissionAmount, p.CreatedAt, p.PaidAt))
             .ToListAsync();
     }
 
     private async Task UpdateTreeBulkAsync(Guid startUserId, LegPosition addedPosition)
     {
-        var ancestors = await _db.Users.FromSqlRaw(@$"
+        var ancestorIds = await _db.Database.SqlQueryRaw<Guid>($@"
             WITH RECURSIVE AncestorTree AS (
-                SELECT ""Id"", ""BinaryParentId"", ""LeftCount"", ""RightCount"" FROM ""AspNetUsers"" WHERE ""Id"" = {{0}}
+                SELECT ""Id"" FROM ""AspNetUsers"" WHERE ""Id"" = {{0}}
                 UNION ALL
-                SELECT u.""Id"", u.""BinaryParentId"", u.""LeftCount"", u.""RightCount"" FROM ""AspNetUsers"" u
-                INNER JOIN AncestorTree a ON u.""Id"" = a.""BinaryParentId""
+                SELECT u.""Id"" FROM ""AspNetUsers"" u
+                INNER JOIN AncestorTree a ON u.""BinaryParentId"" = a.""Id""
             )
-            SELECT * FROM AncestorTree
+            SELECT ""Id"" FROM AncestorTree
         ", startUserId).ToListAsync();
+
+        var ancestors = await _db.Users
+            .Where(u => ancestorIds.Contains(u.Id))
+            .ToListAsync();
 
         foreach (var user in ancestors)
         {

@@ -116,13 +116,38 @@ public static class CommerceEndpoints
         app.MapGet("/admin/commissions", async (AppDbContext db) => await db.Commissions.OrderByDescending(c => c.CreatedAt).ToListAsync())
             .RequireAuthorization(AdminOnly).WithTags("Admin Commissions");
 
+        app.MapGet("/admin/available-recipients", async (AppDbContext db) =>
+        {
+            var commissionRecipients = await db.Commissions
+                .Where(c => c.Status == CommissionStatus.Available)
+                .GroupBy(c => c.RecipientId)
+                .Select(g => new AvailableRecipientDto(g.Key, g.Sum(c => c.Amount), "Commission"))
+                .ToListAsync();
+
+            var binaryRecipients = await db.BinaryPairs
+                .Where(p => p.PaidAt == null)
+                .GroupBy(p => p.UserId)
+                .Select(g => new AvailableRecipientDto(g.Key, g.Sum(p => p.CommissionAmount), "BinaryPair"))
+                .ToListAsync();
+
+            return Results.Ok(commissionRecipients.Concat(binaryRecipients));
+        }).RequireAuthorization(AdminOnly).WithTags("Admin Commissions");
+
         app.MapGet("/me/earnings", async (ClaimsPrincipal principal, UserManager<AppUser> users, AppDbContext db) =>
         {
             var me = await users.GetUserAsync(principal);
             if (me is null) return Results.NotFound();
             var rows = await db.Commissions.Where(c => c.RecipientId == me.Id).GroupBy(c => c.Status).Select(g => new { Status = g.Key, Amount = g.Sum(x => x.Amount) }).ToListAsync();
             decimal Sum(CommissionStatus status) => rows.Where(r => r.Status == status).Sum(r => r.Amount);
-            return Results.Ok(new CommissionSummaryDto(Sum(CommissionStatus.Available), Sum(CommissionStatus.Paid), Sum(CommissionStatus.Reversed), Sum(CommissionStatus.RecoveryRequired)));
+
+            var binaryUnpaid = await db.BinaryPairs.Where(p => p.UserId == me.Id && p.PaidAt == null).SumAsync(p => p.CommissionAmount);
+            var binaryPaid = await db.BinaryPairs.Where(p => p.UserId == me.Id && p.PaidAt != null).SumAsync(p => p.CommissionAmount);
+
+            return Results.Ok(new CommissionSummaryDto(
+                Sum(CommissionStatus.Available) + binaryUnpaid,
+                Sum(CommissionStatus.Paid) + binaryPaid,
+                Sum(CommissionStatus.Reversed),
+                Sum(CommissionStatus.RecoveryRequired)));
         }).RequireAuthorization().WithTags("Commissions");
 
         app.MapGet("/me/commissions", async (int? page, int? pageSize, ClaimsPrincipal principal, UserManager<AppUser> users, AppDbContext db) =>
@@ -147,9 +172,18 @@ public static class CommerceEndpoints
             var eligible = db.Commissions.Where(c => c.RecipientId == request.RecipientId && c.Status == CommissionStatus.Available);
             if (request.CommissionIds is { Count: > 0 }) eligible = eligible.Where(c => request.CommissionIds.Contains(c.Id));
             var commissions = await eligible.ToListAsync();
-            if (commissions.Count == 0) return Results.BadRequest("No available commissions were selected.");
-            var payout = new PayoutBatch { RecipientId = request.RecipientId, Amount = commissions.Sum(c => c.Amount) };
+
+            var binaryPairs = await db.BinaryPairs
+                .Where(p => p.UserId == request.RecipientId && p.PaidAt == null)
+                .ToListAsync();
+
+            if (commissions.Count == 0 && binaryPairs.Count == 0)
+                return Results.BadRequest("No available commissions or binary pairs were selected.");
+
+            var total = commissions.Sum(c => c.Amount) + binaryPairs.Sum(p => p.CommissionAmount);
+            var payout = new PayoutBatch { RecipientId = request.RecipientId, Amount = total };
             payout.Items = commissions.Select(c => new PayoutItem { CommissionId = c.Id }).ToList();
+            payout.Items.AddRange(binaryPairs.Select(p => new PayoutItem { BinaryPairId = p.Id }));
             db.PayoutBatches.Add(payout); await db.SaveChangesAsync(); return Results.Created($"/admin/payouts/{payout.Id}", new PayoutDto(payout.Id, payout.Amount, payout.Status, payout.CreatedAt, payout.PaidAt));
         });
         payouts.MapPost("/{id:guid}/paid", async (Guid id, AppDbContext db) =>
@@ -157,9 +191,13 @@ public static class CommerceEndpoints
             var payout = await db.PayoutBatches.Include(p => p.Items).FirstOrDefaultAsync(p => p.Id == id);
             if (payout is null) return Results.NotFound();
             if (payout.Status == PayoutStatus.Paid) return Results.Ok(new PayoutDto(payout.Id, payout.Amount, payout.Status, payout.CreatedAt, payout.PaidAt));
-            var now = DateTime.UtcNow; var commissionIds = payout.Items.Select(i => i.CommissionId).ToList();
+            var now = DateTime.UtcNow;
+            var commissionIds = payout.Items.Select(i => i.CommissionId).Where(id => id.HasValue).Select(id => id!.Value).ToList();
             var commissions = await db.Commissions.Where(c => commissionIds.Contains(c.Id) && c.Status == CommissionStatus.Available).ToListAsync();
             foreach (var commission in commissions) { commission.Status = CommissionStatus.Paid; commission.PaidAt = now; }
+            var binaryPairIds = payout.Items.Select(i => i.BinaryPairId).Where(id => id.HasValue).Select(id => id!.Value).ToList();
+            var binaryPairs = await db.BinaryPairs.Where(p => binaryPairIds.Contains(p.Id) && p.PaidAt == null).ToListAsync();
+            foreach (var pair in binaryPairs) { pair.PaidAt = now; }
             payout.Status = PayoutStatus.Paid; payout.PaidAt = now; await db.SaveChangesAsync();
             return Results.Ok(new PayoutDto(payout.Id, payout.Amount, payout.Status, payout.CreatedAt, payout.PaidAt));
         });

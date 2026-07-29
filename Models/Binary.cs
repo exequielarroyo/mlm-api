@@ -14,6 +14,8 @@ public class BinaryPair
     public decimal CommissionAmount { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime? PaidAt { get; set; }
 }
 
 // DTOs
@@ -42,7 +44,8 @@ public record BinaryPairDto(
     Guid Id,
     int PairsMatched,
     decimal CommissionAmount,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    DateTime? PaidAt);
 
 public record PlaceMemberRequest(
     Guid SponsorId,
